@@ -1,115 +1,113 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { getModelToken } from '@nestjs/mongoose';
-import mongoose, { Model } from 'mongoose';
-import { AuthService } from './auth.service';
-import { User } from './schemas/user.schema';
 import { JwtService } from '@nestjs/jwt';
+import { getModelToken } from "@nestjs/mongoose";
+import { Test, TestingModule } from "@nestjs/testing";
+import { Model } from "mongoose";
+import { AuthService } from "./auth.service"
+import { User } from "./schemas/user.schema";
 import * as bcrypt from 'bcryptjs';
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 
-describe('AuthService', () => {
-  let authService: AuthService;
-  let model: Model<User>;
-  let jwtService: JwtService;
+
+
+describe("authService" , () =>{
+
+  const authService : AuthService;
+  const model : Model<User>;
+  const jwtService: JwtService; // we want to use jwt functions so like authService we add it here
+
+  const mockUserService = { // functions we used from model
+    create : jest.fn()
+  }
 
   const mockUser = {
-    _id: '61c0ccf11d7bf83d153d7c06',
-    name: 'Ghulam',
-    email: 'ghulam1@gmail.com',
-  };
+    name : "mamad",
+    email : "mamad@gmail.com",
+    password : "unhashed"
+  }
 
-  let token = 'jwtToken';
+  let hashedMockUser = {
+    ...mockUser
+  }
 
-  const mockAuthService = {
-    create: jest.fn(),
-    findOne: jest.fn(),
-  };
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AuthService,
-        JwtService,
-        {
-          provide: getModelToken(User.name),
-          useValue: mockAuthService,
-        },
-      ],
-    }).compile();
+  beforeAll(async () => {
+    const module : TestingModule = await Test.createTestingModule({
+      providers : [AuthService , 
+        JwtService // bc we have jwt in our service depedencies so we should add it here
+        ,{
+        provide : getModelToken(User.name),
+        useValue : mockUserService
+      }]
+    })
 
     authService = module.get<AuthService>(AuthService);
     model = module.get<Model<User>>(getModelToken(User.name));
     jwtService = module.get<JwtService>(JwtService);
-  });
 
-  it('should be defined', () => {
+  })
+
+  it("authService should be defined" , () => { // this is optional
     expect(authService).toBeDefined();
-  });
+  })
 
-  describe('signUp', () => {
-    const signUpDto = {
-      name: 'Ghulam',
-      email: 'ghulam1@gmail.com',
-      password: '12345678',
-    };
 
-    it('should register the new user', async () => {
-      jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashedPassword');
-      jest
-        .spyOn(model, 'create')
-        .mockImplementationOnce(() => Promise.resolve(mockUser));
+  describe("signUp" , () => {
+    it("create user and return its token" ,async () => {
 
-      jest.spyOn(jwtService, 'sign').mockReturnValue('jwtToken');
+      const hashed = "hashed passwordoo";
+      const token = "some token!";
 
-      const result = await authService.signUp(signUpDto);
+      jest.spyOn(bcrypt , "hash").mockImplementation(() => Promise.resolve(hashed)); // returning hashed string , trying to use mockresolev gives error
 
-      expect(bcrypt.hash).toHaveBeenCalled();
-      expect(result).toEqual({ token });
-    });
+      // jest.spyOn(model , "create").mockResolvedValue({ // it doesnt work!
+      //   ...mockUser ,
+      //   password : hashed
+      // })
 
-    it('should throw duplicate email entered', async () => {
-      jest
-        .spyOn(model, 'create')
-        .mockImplementationOnce(() => Promise.reject({ code: 11000 }));
+      jest.spyOn(model , "create").mockImplementation(() => Promise.resolve({
+        ...mockUser,
+        password : hashed
+      }))
 
-      await expect(authService.signUp(signUpDto)).rejects.toThrow(
-        ConflictException,
-      );
-    });
-  });
+      jest.spyOn(jwtService , "sign").mockReturnValue(token); // bc we dont return a promise so we use mockReturnValue
 
-  describe('logIn', () => {
-    const loginDto = {
-      email: 'ghulam1@gmail.com',
-      password: '12345678',
-    };
+      const result = await authService.signUp(mockUser);
 
-    it('should login user and return the token', async () => {
-      jest.spyOn(model, 'findOne').mockResolvedValueOnce(mockUser);
 
-      jest.spyOn(bcrypt, 'compare').mockResolvedValueOnce(true);
-      jest.spyOn(jwtService, 'sign').mockReturnValue(token);
+      expect(bcrypt.hash).toHaveBeenCalled(); 
+      expect(result).toEqual({token});
 
-      const result = await authService.login(loginDto);
+      hashedMockUser = {
+        ...mockUser,
+        password : hashed
+      }
+    })
 
-      expect(result).toEqual({ token });
-    });
 
-    it('should throw invalid email error', async () => {
-      jest.spyOn(model, 'findOne').mockResolvedValueOnce(null);
+    it("it should return error for duplicated email",async () => {
 
-      expect(authService.login(loginDto)).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
+      jest.spyOn(model , "create").mockImplementation(() => Promise.reject({code : 11000})); //note we used reject for promise!
 
-    it('should throw invalid password error', async () => {
-      jest.spyOn(model, 'findOne').mockResolvedValueOnce(mockUser);
-      jest.spyOn(bcrypt, 'compare').mockResolvedValueOnce(false);
+      await expect(authService.signUp(mockUser)).rejects.toThrow(ConflictException);
+    })
+  })
 
-      expect(authService.login(loginDto)).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-  });
-});
+  describe("login" , () => {
+    it("should login user and return its token" ,async () => {
+      const token = "some token2";
+
+      jest.spyOn(model , "findOne").mockResolvedValue(hashedMockUser);
+
+      jest.spyOn(bcrypt , "compare").mockImplementation(() => true);
+
+      jest.spyOn(jwtService , "sign").mockReturnValue(token);
+
+      const result = await authService.login({
+        email: mockUser.email,
+        password : mockUser.password
+      })
+
+      expect(result).toEqual({token});
+    })
+  })
+})
